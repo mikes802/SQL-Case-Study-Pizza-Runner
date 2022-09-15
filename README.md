@@ -11,3 +11,25 @@ This is Case Study #2 from the 8-Week SQL Challenge of [Danny Ma's Serious SQL c
 ### Problem Statement
 
 
+## [Data Exploration](#table-of-contents)
+```sql
+-- Check data types for `runner_orders` table
+
+SELECT
+  table_schema,
+  table_name,
+  column_name,
+  data_type
+FROM information_schema.columns
+WHERE
+  table_schema = 'pizza_runner'
+  AND table_name = 'runner_orders';
+```
+| table_schema | table_name    | column_name  | data_type         |
+|--------------|---------------|--------------|-------------------|
+| pizza_runner | runner_orders | order_id     | integer           |
+| pizza_runner | runner_orders | runner_id    | integer           |
+| pizza_runner | runner_orders | pickup_time  | character varying |
+| pizza_runner | runner_orders | distance     | character varying |
+| pizza_runner | runner_orders | duration     | character varying |
+| pizza_runner | runner_orders | cancellation | character varying |
