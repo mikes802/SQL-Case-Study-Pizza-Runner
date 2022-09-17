@@ -12,6 +12,7 @@ This is Case Study #2 from the 8-Week SQL Challenge of [Danny Ma's Serious SQL c
 
 
 ## [Data Exploration](#table-of-contents)
+### `runners`
 ```sql
 -- Check data types for `runners` table
 
@@ -43,6 +44,7 @@ FROM pizza_runner.runners;
 | 3         | 2021-01-08T00:00:00.000Z |
 | 4         | 2021-01-15T00:00:00.000Z |
 
+### `runner_orders`
 ```sql
 -- Check data types for `runner_orders` table
 
@@ -86,6 +88,23 @@ FROM pizza_runner.runner_orders;
 
 Noted inconsistencies in the above table, specifically the `pickup_time`, `distance`, `duration`, and `cancellation` fields. The first three are string fields. Multiple values are entered as 'null' strings, which is different from an actual NULL. Caution needs to be taken with this table.
 
+```sql
+-- Check distinct values in `cancellation` column.
+
+SELECT DISTINCT(cancellation)
+FROM pizza_runner.runner_orders;
+```
+| cancellation            |
+|-------------------------|
+| _null_                  |
+| null                    |
+|                         |
+| Customer Cancellation   |
+| Restaurant Cancellation |
+
+This shows that there are real `NULL`s, strings typed in as "null", and some just left blank. 
+
+### `customer_orders`
 ```sql
 -- Check data types for `customer_orders` table
 
@@ -134,6 +153,24 @@ FROM pizza_runner.customer_orders;
 Here I see more 'nulls' entered as string variables. The field `order_time` is a `TIMESTAMP` data type with no time zone.
 
 ```sql
+-- Check distinct values in `extras` column.
+
+SELECT DISTINCT(extras)
+FROM pizza_runner.customer_orders;
+```
+| extras |
+|--------|
+| _null_ |
+| null   |
+| 1, 5   |
+|        |
+| 1, 4   |
+| 1      |
+
+As in the `runner_orders` table, there are variations of "null" here that need to be considered when querying. It's also important to note the different relationships represented in this table. One `order_id` can be related to many `pizza_id` values, and one `customer_id` can be related to multiple `order_id` values. 
+
+### `pizza_names`
+```sql
 -- Check data types for `pizza_names` table
 
 SELECT
@@ -162,6 +199,7 @@ FROM pizza_runner.pizza_names;
 | 1        | Meatlovers |
 | 2        | Vegetarian |
 
+### `pizza_recipes`
 ```sql
 -- Check data types for `pizza_recipes` table
 
@@ -191,6 +229,7 @@ FROM pizza_runner.pizza_recipes;
 | 1        | 1, 2, 3, 4, 5, 6, 8, 10 |
 | 2        | 4, 6, 7, 9, 11, 12      |
 
+### `pizza_toppings`
 ```sql
 -- Check data types for `pizza_toppings` table
 
@@ -229,3 +268,70 @@ FROM pizza_runner.pizza_toppings;
 | 10         | Salami       |
 | 11         | Tomatoes     |
 | 12         | Tomato Sauce |
+
+## [SQL Query Solutions](#table-of-contents)
+### Pizza Metrics
+> 1. How many pizzas were ordered?
+
+```sql
+-- Each row in the `customer_orders` table represents one pizza.
+
+SELECT COUNT(*)
+FROM pizza_runner.customer_orders;
+```
+| count |
+|-------|
+| 14    |
+
+> 2. How many unique customer orders were made?
+```sql
+-- Count number of distinct `order_id` values.
+
+SELECT
+  COUNT(DISTINCT order_id) AS order_count
+FROM pizza_runner.customer_orders;
+```
+| unique_order_count |
+|--------------------|
+| 10                 |
+
+> 3. How many successful orders were delivered by each runner?
+```sql
+-- Count number of rows that do not note a cancellation
+
+SELECT
+  COUNT(*) AS successful_delivery_count
+FROM pizza_runner.runner_orders
+WHERE cancellation != 'Restaurant Cancellation'
+  AND cancellation != 'Customer Cancellation'
+   OR cancellation IS NULL; -- Need to include or will not return these rows in count
+```
+| successful_delivery_count |
+|---------------------------|
+| 8                         |
+
+> 4. How many of each type of pizza was delivered?
+```sql
+-- Join successful delivery orders with # of pizza id's
+
+WITH successful_deliveries AS (
+  SELECT
+    order_id
+  FROM pizza_runner.runner_orders
+  WHERE cancellation != 'Restaurant Cancellation'
+    AND cancellation != 'Customer Cancellation'
+    OR cancellation IS NULL -- Need to include or will not return these rows
+)
+SELECT
+  pizza_id,
+  COUNT(pizza_id) AS pizza_count
+FROM successful_deliveries
+INNER JOIN pizza_runner.customer_orders -- There are multiple rows with same id
+  ON successful_deliveries.order_id = customer_orders.order_id
+GROUP BY pizza_id
+ORDER BY pizza_id;
+```
+| pizza_id | pizza_count |
+|----------|-------------|
+| 1        | 9           |
+| 2        | 3           |
