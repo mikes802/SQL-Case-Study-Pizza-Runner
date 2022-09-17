@@ -300,15 +300,20 @@ FROM pizza_runner.customer_orders;
 -- Count number of rows that do not note a cancellation
 
 SELECT
+  runner_id,
   COUNT(*) AS successful_delivery_count
 FROM pizza_runner.runner_orders
 WHERE cancellation != 'Restaurant Cancellation'
   AND cancellation != 'Customer Cancellation'
-   OR cancellation IS NULL; -- Need to include or will not return these rows in count
+   OR cancellation IS NULL -- Need to include or will not return these rows in count
+GROUP BY runner_id
+ORDER BY runner_id;
 ```
-| successful_delivery_count |
-|---------------------------|
-| 8                         |
+| runner_id | successful_delivery_count |
+|-----------|---------------------------|
+| 1         | 4                         |
+| 2         | 3                         |
+| 3         | 1                         |
 
 > 4. How many of each type of pizza was delivered?
 ```sql
@@ -335,3 +340,155 @@ ORDER BY pizza_id;
 |----------|-------------|
 | 1        | 9           |
 | 2        | 3           |
+
+> 5. How many Vegetarian and Meatlovers were ordered by each customer?
+```sql
+-- Use CASE WHEN to count number for each type per customer 
+
+SELECT
+  customer_id,
+  SUM(
+    CASE WHEN pizza_id = 1 THEN 1 ELSE 0
+    END
+  ) AS meatlovers_count,
+  SUM(
+    CASE WHEN pizza_id = 2 THEN 1 ELSE 0
+    END
+  ) AS vegetarian_count
+FROM pizza_runner.customer_orders
+GROUP BY customer_id
+ORDER BY customer_id;
+```
+| customer_id | meatlovers_count | vegetarian_count |
+|-------------|------------------|------------------|
+| 101         | 2                | 1                |
+| 102         | 2                | 1                |
+| 103         | 3                | 1                |
+| 104         | 3                | 0                |
+| 105         | 0                | 1                |
+
+> 6. What was the maximum number of pizzas delivered in a single order?
+```sql
+-- Successful delivery CTE 
+WITH successful_deliveries AS (
+  SELECT
+    order_id
+  FROM pizza_runner.runner_orders
+  WHERE cancellation != 'Restaurant Cancellation'
+    AND cancellation != 'Customer Cancellation'
+    OR cancellation IS NULL -- Need to include or will not return these rows
+)
+SELECT
+  customer_orders.order_id,
+  COUNT(customer_orders.order_id) AS pizza_count
+FROM successful_deliveries
+INNER JOIN pizza_runner.customer_orders -- There are multiple rows with same id
+  ON successful_deliveries.order_id = customer_orders.order_id
+GROUP BY customer_orders.order_id
+ORDER BY pizza_count DESC
+LIMIT 1;
+```
+| order_id | pizza_count |
+|----------|-------------|
+| 4        | 3           |
+
+> 7. For each customer, how many delivered pizzas had at least 1 change and how many had no changes?
+```sql
+-- Successful delivery CTE
+WITH successful_deliveries AS (
+  SELECT
+    order_id
+  FROM pizza_runner.runner_orders
+  WHERE cancellation != 'Restaurant Cancellation'
+    AND cancellation != 'Customer Cancellation'
+    OR cancellation IS NULL -- Need to include or will not return these rows
+)
+SELECT
+  customer_id,
+  SUM(
+    CASE WHEN (exclusions != '' AND exclusions != 'null' AND exclusions IS NOT NULL)
+           OR (extras != '' AND extras != 'null' AND extras IS NOT NULL)  -- I'm looking for entries
+         THEN 1
+         ELSE 0
+    END
+  ) AS order_change_count,
+  SUM(
+    CASE WHEN (exclusions = '' OR exclusions = 'null' OR exclusions IS NULL)
+          AND (extras = '' OR extras = 'null' OR extras IS NULL)  -- I'm looking for no entries
+         THEN 1
+         ELSE 0
+    END
+  ) AS no_order_change_count
+FROM successful_deliveries
+INNER JOIN pizza_runner.customer_orders -- There are multiple rows with same id
+  ON successful_deliveries.order_id = customer_orders.order_id
+GROUP BY customer_id
+ORDER BY customer_id;
+```
+| customer_id | order_change_count | no_order_change_count |
+|-------------|--------------------|-----------------------|
+| 101         | 0                  | 2                     |
+| 102         | 0                  | 3                     |
+| 103         | 3                  | 0                     |
+| 104         | 2                  | 1                     |
+| 105         | 1                  | 0                     |
+
+> 8. How many pizzas were delivered that had both exclusions and extras?
+```sql
+WITH successful_deliveries AS (
+  SELECT
+    order_id
+  FROM pizza_runner.runner_orders
+  WHERE cancellation != 'Restaurant Cancellation'
+    AND cancellation != 'Customer Cancellation'
+    OR cancellation IS NULL -- Need to include or will not return these rows
+)
+SELECT
+  SUM(
+    CASE WHEN (exclusions != '' AND exclusions != 'null' AND exclusions IS NOT NULL)
+          AND (extras != '' AND extras != 'null' AND extras IS NOT NULL)  -- I'm looking for numbers in both
+        THEN 1
+        ELSE 0
+    END
+  ) AS order_change_count
+FROM successful_deliveries
+INNER JOIN pizza_runner.customer_orders -- There are multiple rows with same id
+  ON successful_deliveries.order_id = customer_orders.order_id;
+```
+| order_change_count |
+|--------------------|
+| 1                  |
+
+> 9. What was the total volume of pizzas ordered for each hour of the day?
+```sql
+SELECT
+  DATE_PART('HOUR', order_time) AS hour_of_day,
+  COUNT(*) AS order_count
+FROM pizza_runner.customer_orders
+GROUP BY hour_of_day
+ORDER BY hour_of_day;
+```
+| hour_of_day | order_count |
+|-------------|-------------|
+| 11          | 1           |
+| 13          | 3           |
+| 18          | 3           |
+| 19          | 1           |
+| 21          | 3           |
+| 23          | 3           |
+
+> 10. What was the volume of orders for each day of the week?
+```sql
+SELECT
+  TO_CHAR(order_time, 'Day') AS day_of_week,
+  COUNT(*) AS order_count
+FROM pizza_runner.customer_orders
+GROUP BY day_of_week
+ORDER BY order_count DESC;
+```
+| day_of_week | order_count |
+|-------------|-------------|
+| Monday      | 5           |
+| Friday      | 5           |
+| Saturday    | 3           |
+| Sunday      | 1           |
