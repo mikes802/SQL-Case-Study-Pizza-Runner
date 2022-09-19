@@ -374,9 +374,8 @@ WITH successful_deliveries AS (
   SELECT
     order_id
   FROM pizza_runner.runner_orders
-  WHERE cancellation != 'Restaurant Cancellation'
-    AND cancellation != 'Customer Cancellation'
-    OR cancellation IS NULL -- Need to include or will not return these rows
+  WHERE cancellation NOT IN ('Restaurant Cancellation', 'Customer Cancellation')
+     OR cancellation IS NULL -- Need to include or will not return these rows
 )
 SELECT
   customer_orders.order_id,
