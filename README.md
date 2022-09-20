@@ -6,6 +6,7 @@ This is Case Study #2 from the 8-Week SQL Challenge of [Danny Ma's Serious SQL c
 1. [Background](#background)
 2. [Data Exploration](#data-exploration)
 3. [SQL Query Solutions](#sql-query-solutions)
+    1. [Pizza Metrics](#pizza-metrics)
 
 ## [Background](#table-of-contents)
 ### Problem Statement
@@ -303,8 +304,7 @@ SELECT
   runner_id,
   COUNT(*) AS successful_delivery_count
 FROM pizza_runner.runner_orders
-WHERE cancellation != 'Restaurant Cancellation'
-  AND cancellation != 'Customer Cancellation'
+WHERE cancellation NOT IN ('Restaurant Cancellation', 'Customer Cancellation')
    OR cancellation IS NULL -- Need to include or will not return these rows in count
 GROUP BY runner_id
 ORDER BY runner_id;
@@ -323,9 +323,8 @@ WITH successful_deliveries AS (
   SELECT
     order_id
   FROM pizza_runner.runner_orders
-  WHERE cancellation != 'Restaurant Cancellation'
-    AND cancellation != 'Customer Cancellation'
-    OR cancellation IS NULL -- Need to include or will not return these rows
+  WHERE cancellation NOT IN ('Restaurant Cancellation', 'Customer Cancellation')
+     OR cancellation IS NULL -- Need to include or will not return these rows
 )
 SELECT
   pizza_id,
@@ -393,34 +392,37 @@ LIMIT 1;
 
 > 7. For each customer, how many delivered pizzas had at least 1 change and how many had no changes?
 ```sql
--- Successful delivery CTE
-WITH successful_deliveries AS (
+WITH fixed_nulls AS (
   SELECT
-    order_id
-  FROM pizza_runner.runner_orders
-  WHERE cancellation != 'Restaurant Cancellation'
-    AND cancellation != 'Customer Cancellation'
-    OR cancellation IS NULL -- Need to include or will not return these rows
+    order_id,
+    customer_id,
+    CASE WHEN exclusions IN ('', 'null') THEN NULL ELSE exclusions END AS exclusions,
+    CASE WHEN extras IN ('', 'null') THEN NULL ELSE extras END AS extras
+  FROM pizza_runner.customer_orders
 )
 SELECT
   customer_id,
   SUM(
-    CASE WHEN (exclusions != '' AND exclusions != 'null' AND exclusions IS NOT NULL)
-           OR (extras != '' AND extras != 'null' AND extras IS NOT NULL)  -- I'm looking for entries
+    CASE WHEN (exclusions IS NOT NULL) OR (extras IS NOT NULL)  -- I'm looking for entries
          THEN 1
          ELSE 0
     END
   ) AS order_change_count,
   SUM(
-    CASE WHEN (exclusions = '' OR exclusions = 'null' OR exclusions IS NULL)
-          AND (extras = '' OR extras = 'null' OR extras IS NULL)  -- I'm looking for no entries
+    CASE WHEN (exclusions IS NULL) AND (extras IS NULL)  -- I'm looking for no entries
          THEN 1
          ELSE 0
     END
   ) AS no_order_change_count
-FROM successful_deliveries
-INNER JOIN pizza_runner.customer_orders -- There are multiple rows with same id
-  ON successful_deliveries.order_id = customer_orders.order_id
+FROM fixed_nulls
+-- This will return only order_id's that had successful deliveries
+WHERE EXISTS (
+  SELECT 1
+  FROM pizza_runner.runner_orders
+  WHERE fixed_nulls.order_id = runner_orders.order_id
+    AND (cancellation NOT IN ('Restaurant Cancellation', 'Customer Cancellation')
+     OR cancellation IS NULL) -- Need to include or will not return these rows
+)
 GROUP BY customer_id
 ORDER BY customer_id;
 ```
@@ -434,25 +436,25 @@ ORDER BY customer_id;
 
 > 8. How many pizzas were delivered that had both exclusions and extras?
 ```sql
-WITH successful_deliveries AS (
+WITH fixed_nulls AS (
   SELECT
-    order_id
-  FROM pizza_runner.runner_orders
-  WHERE cancellation != 'Restaurant Cancellation'
-    AND cancellation != 'Customer Cancellation'
-    OR cancellation IS NULL -- Need to include or will not return these rows
+    order_id,
+    customer_id,
+    CASE WHEN exclusions IN ('', 'null') THEN NULL ELSE exclusions END AS exclusions,
+    CASE WHEN extras IN ('', 'null') THEN NULL ELSE extras END AS extras
+  FROM pizza_runner.customer_orders
 )
 SELECT
-  SUM(
-    CASE WHEN (exclusions != '' AND exclusions != 'null' AND exclusions IS NOT NULL)
-          AND (extras != '' AND extras != 'null' AND extras IS NOT NULL)  -- I'm looking for numbers in both
-        THEN 1
-        ELSE 0
-    END
-  ) AS order_change_count
-FROM successful_deliveries
-INNER JOIN pizza_runner.customer_orders -- There are multiple rows with same id
-  ON successful_deliveries.order_id = customer_orders.order_id;
+  COUNT(*) AS order_change_count
+FROM fixed_nulls
+WHERE EXISTS (
+  SELECT 1
+  FROM pizza_runner.runner_orders
+  WHERE fixed_nulls.order_id = runner_orders.order_id
+    AND (cancellation NOT IN ('Restaurant Cancellation', 'Customer Cancellation')
+    OR cancellation IS NULL) -- Need to include or will not return these rows
+)
+  AND (exclusions IS NOT NULL AND extras IS NOT NULL);
 ```
 | order_change_count |
 |--------------------|
