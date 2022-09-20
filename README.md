@@ -486,12 +486,12 @@ SELECT
   TO_CHAR(order_time, 'Day') AS day_of_week,
   COUNT(*) AS order_count
 FROM pizza_runner.customer_orders
-GROUP BY day_of_week
-ORDER BY order_count DESC;
+GROUP BY day_of_week, DATE_PART('dow', order_time)
+ORDER BY DATE_PART('dow', order_time);
 ```
 | day_of_week | order_count |
 |-------------|-------------|
+| Sunday      | 1           |
 | Monday      | 5           |
 | Friday      | 5           |
 | Saturday    | 3           |
-| Sunday      | 1           |
