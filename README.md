@@ -392,6 +392,7 @@ LIMIT 1;
 
 > 7. For each customer, how many delivered pizzas had at least 1 change and how many had no changes?
 ```sql
+-- Fix the blank spaces and 'null' strings so that they are real NULLs
 WITH fixed_nulls AS (
   SELECT
     order_id,
@@ -436,6 +437,7 @@ ORDER BY customer_id;
 
 > 8. How many pizzas were delivered that had both exclusions and extras?
 ```sql
+-- Fix the blank spaces and 'null' strings so that they are real NULLs
 WITH fixed_nulls AS (
   SELECT
     order_id,
