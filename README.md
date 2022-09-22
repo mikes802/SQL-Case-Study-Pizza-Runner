@@ -537,3 +537,37 @@ ORDER BY runner_id;
 | 1         | 15.67778               |
 | 2         | 23.72                  |
 | 3         | 10.46667               |
+
+> 3. Is there any relationship between the number of pizzas and how long the order takes to prepare?
+```sql
+-- I have to assume that `pickup_time` is when the order was prepared.
+-- Use a subquery to aggregate & pull in # of pizzas per order from `customer_order` table
+
+SELECT 
+  runner_orders.order_id, 
+  subquery.pizza_count,
+  (EXTRACT(EPOCH FROM pickup_time::TIMESTAMP)
+      - EXTRACT(EPOCH FROM order_time)) / (60) AS order_prep_time
+FROM 
+ (SELECT
+    order_id, order_time, COUNT(*) AS pizza_count
+    FROM pizza_runner.customer_orders
+    GROUP BY order_id, order_time
+ ) subquery
+INNER JOIN pizza_runner.runner_orders
+  ON runner_orders.order_id = subquery.order_id
+WHERE runner_orders.pickup_time <> 'null'
+ORDER BY order_prep_time;
+```
+| order_id | pizza_count | order_prep_time |
+|----------|-------------|-----------------|
+| 2        | 1           | 10.03333        |
+| 7        | 1           | 10.26667        |
+| 5        | 1           | 10.46667        |
+| 1        | 1           | 10.53333        |
+| 10       | 2           | 15.51667        |
+| 8        | 1           | 20.48333        |
+| 3        | 2           | 21.23333        |
+| 4        | 3           | 29.28333        |
+
+Generally speaking, yes, the more pizzas ordered, the longer it takes to prepare the order. The outlier is `order_id` = 8, where it took nearly twice as long to prepare one pizza than would be expected given the data.
