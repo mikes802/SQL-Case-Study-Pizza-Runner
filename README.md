@@ -7,6 +7,7 @@ This is Case Study #2 from the 8-Week SQL Challenge of [Danny Ma's Serious SQL c
 2. [Data Exploration](#data-exploration)
 3. [SQL Query Solutions](#sql-query-solutions)
     1. [Pizza Metrics](#pizza-metrics)
+    2. [Runner and Customer Experience](#runner-and-customer-experience)
 
 ## [Background](#table-of-contents)
 ### Problem Statement
@@ -271,7 +272,7 @@ FROM pizza_runner.pizza_toppings;
 | 12         | Tomato Sauce |
 
 ## [SQL Query Solutions](#table-of-contents)
-### Pizza Metrics
+### [Pizza Metrics](#table-of-contents)
 > 1. How many pizzas were ordered?
 
 ```sql
@@ -487,7 +488,7 @@ SELECT
   COUNT(*) AS order_count
 FROM pizza_runner.customer_orders
 GROUP BY day_of_week, DATE_PART('dow', order_time)
-ORDER BY DATE_PART('dow', order_time);
+ORDER BY DATE_PART('dow', order_time); -- This will order with Sunday at the top
 ```
 | day_of_week | order_count |
 |-------------|-------------|
@@ -495,3 +496,44 @@ ORDER BY DATE_PART('dow', order_time);
 | Monday      | 5           |
 | Friday      | 5           |
 | Saturday    | 3           |
+
+### [Runner and Customer Experience](#table-of-contents)
+> 1. How many runners signed up for each 1 week period? (i.e. week starts 2021-01-01)
+```sql
+SELECT
+-- Use date truncation and offset by four days to get a custom start of week for Friday (2021-01-01)
+  (DATE_TRUNC('WEEK', registration_date - INTERVAL '4 DAYS') + INTERVAL '4 DAYS')::DATE AS week_of,
+  COUNT(*) AS runners_registered
+FROM pizza_runner.runners
+GROUP BY week_of
+ORDER BY week_of;
+```
+| week_of                  | runners_registered |
+|--------------------------|--------------------|
+| 2021-01-01T00:00:00.000Z | 2                  |
+| 2021-01-08T00:00:00.000Z | 1                  |
+| 2021-01-15T00:00:00.000Z | 1                  |
+
+> 2. What was the average time in minutes it took for each runner to arrive at the Pizza Runner HQ to pickup the order?
+```sql
+-- Will need to join `order_time` from `customer_orders` table to `runner_orders` table
+-- `pickup_time` in `runner_orders` table is not a TIMESTAMP, unlike `order_time`
+
+SELECT
+  runner_id,
+  AVG(
+    (EXTRACT(EPOCH FROM pickup_time::TIMESTAMP)
+      - EXTRACT(EPOCH FROM order_time)) / (60)
+    ) AS avg_time_to_pickup_min
+FROM pizza_runner.runner_orders
+INNER JOIN pizza_runner.customer_orders
+  ON runner_orders.order_id = customer_orders.order_id
+WHERE pickup_time <> 'null'
+GROUP BY runner_id
+ORDER BY runner_id;
+```
+| runner_id | avg_time_to_pickup_min |
+|-----------|------------------------|
+| 1         | 15.67778               |
+| 2         | 23.72                  |
+| 3         | 10.46667               |
