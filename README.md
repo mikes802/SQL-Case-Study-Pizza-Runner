@@ -73,7 +73,7 @@ WHERE
 -- Explore the `runner_orders` table
 
 SELECT *
-FROM pizza_runner.runner_orders;
+  ;
 ```
 | order_id | runner_id | pickup_time         | distance | duration   | cancellation            |
 |----------|-----------|---------------------|----------|------------|-------------------------|
@@ -571,3 +571,39 @@ ORDER BY order_prep_time;
 | 4        | 3           | 29.28333        |
 
 Generally speaking, yes, the more pizzas ordered, the longer it takes to prepare the order. The outlier is `order_id` = 8, where it took nearly twice as long to prepare one pizza than would be expected given the data.
+
+> 4. What was the average distance travelled for each customer?
+```sql
+-- `distance` is a string with various entries
+-- Use `REGEXP_MATCH` to isolate the numbers, cannot `CAST` at the same time,
+-- so need to do this in a CTE
+WITH distance_fix AS (
+  SELECT
+    order_id,
+    UNNEST(REGEXP_MATCH(distance, '[0-9]*\.*[0-9]*')) AS flat_distance
+  FROM pizza_runner.runner_orders
+  WHERE distance <> 'null'
+)
+-- Can average the distances now after casting as `NUMERIC`
+SELECT
+  customer_id,
+  AVG(flat_distance::NUMERIC) AS avg_distance
+-- Collapse `order_id` values in this subquery to prevent duplicate
+-- rows (and incorrect averages) after joining to get `customer_id`
+FROM (
+  SELECT order_id, customer_id
+  FROM pizza_runner.customer_orders
+  GROUP BY order_id, customer_id
+) subquery
+INNER JOIN distance_fix
+  ON distance_fix.order_id = subquery.order_id
+GROUP BY customer_id
+ORDER BY customer_id;
+```
+| customer_id | avg_distance        |
+|-------------|---------------------|
+| 101         | 20.0000000000000000 |
+| 102         | 18.4000000000000000 |
+| 103         | 23.4000000000000000 |
+| 104         | 10.0000000000000000 |
+| 105         | 25.0000000000000000 |
