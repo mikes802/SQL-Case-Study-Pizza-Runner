@@ -73,7 +73,7 @@ WHERE
 -- Explore the `runner_orders` table
 
 SELECT *
-  ;
+FROM pizza_runner.runner_orders;
 ```
 | order_id | runner_id | pickup_time         | distance | duration   | cancellation            |
 |----------|-----------|---------------------|----------|------------|-------------------------|
@@ -607,3 +607,63 @@ ORDER BY customer_id;
 | 103         | 23.4000000000000000 |
 | 104         | 10.0000000000000000 |
 | 105         | 25.0000000000000000 |
+
+> 5. What was the difference between the longest and shortest delivery times for all orders?
+```sql
+-- This refers to the `duration` field, but this field is a string.
+-- Use `REGEXP_MATCH` to isolate the numbers, cannot `CAST` at the same time,
+-- so need to do this in a CTE
+WITH duration_fix AS (
+  SELECT
+    order_id,
+    UNNEST(REGEXP_MATCH(duration, '[0-9]*')) AS flat_duration
+  FROM pizza_runner.runner_orders
+  WHERE distance <> 'null'
+)
+-- Can calculate the difference now after casting as `NUMERIC`
+SELECT
+  MAX(flat_duration) AS max_duration,
+  MIN(flat_duration) AS min_duration,
+  MAX(flat_duration::NUMERIC) - MIN(flat_duration::NUMERIC) AS duration_diff
+FROM duration_fix;
+```
+| max_duration | min_duration | duration_diff |
+|--------------|--------------|---------------|
+| 40           | 10           | 30            |
+
+> 6. What was the average speed for each runner for each delivery and do you notice any trend for these values?
+```sql
+-- Use `REGEXP_MATCH` to isolate the numbers, cannot `CAST` at the same time,
+-- so need to do this in a CTE
+WITH dist_duration_fix AS (
+  SELECT
+    order_id,
+    runner_id,
+    UNNEST(REGEXP_MATCH(distance, '[0-9]*\.*[0-9]*')) AS flat_distance,
+    UNNEST(REGEXP_MATCH(duration, '[0-9]*')) AS flat_duration
+  FROM pizza_runner.runner_orders
+  WHERE distance <> 'null' AND duration <> 'null'
+)
+-- Can calculate now after casting as `NUMERIC`
+SELECT *,
+  flat_distance::NUMERIC / flat_duration::NUMERIC AS speed_km_min,
+  AVG(flat_distance::NUMERIC / flat_duration::NUMERIC) OVER ( 
+    PARTITION BY runner_id -- Used a window function to see all info together in one table
+  ) AS avg_runner_speed
+FROM dist_duration_fix
+ORDER BY runner_id;
+```
+| order_id | runner_id | flat_distance | flat_duration | speed_km_min           | avg_runner_speed       |
+|----------|-----------|---------------|---------------|------------------------|------------------------|
+| 1        | 1         | 20            | 32            | 0.62500000000000000000 | 0.75893518518518518519 |
+| 2        | 1         | 20            | 27            | 0.74074074074074074074 | 0.75893518518518518519 |
+| 3        | 1         | 13.4          | 20            | 0.67000000000000000000 | 0.75893518518518518519 |
+| 10       | 1         | 10            | 10            | 1.00000000000000000000 | 0.75893518518518518519 |
+| 7        | 2         | 25            | 25            | 1.00000000000000000000 | 1.04833333333333333333 |
+| 8        | 2         | 23.4          | 15            | 1.5600000000000000     | 1.04833333333333333333 |
+| 4        | 2         | 23.4          | 40            | 0.58500000000000000000 | 1.04833333333333333333 |
+| 5        | 3         | 10            | 15            | 0.66666666666666666667 | 0.66666666666666666667 |
+
+`runner_id` = 2 wins.
+
+> 7. What is the successful delivery percentage for each runner?
