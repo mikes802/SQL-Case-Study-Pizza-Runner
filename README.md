@@ -11,7 +11,16 @@ This is Case Study #2 from the 8-Week SQL Challenge of [Danny Ma's Serious SQL c
 
 ## [Background](#table-of-contents)
 ### Problem Statement
+Paraphrashed from Danny's course:
+> Danny requires assistance in cleaning his data and applying some basic calculations to better direct his pizza runners and optimize the operations of his restaurant.
 
+There are six tables in the database:
+1. `runners`
+2. `runner_orders`
+3. `customer_orders`
+4. `pizza_names`
+5. `pizza_recipes`
+6. `pizza_toppings`
 
 ## [Data Exploration](#table-of-contents)
 ### `runners`
@@ -667,3 +676,26 @@ ORDER BY runner_id;
 `runner_id` = 2 wins.
 
 > 7. What is the successful delivery percentage for each runner?
+```sql
+-- I interpret this as: "% of orders not cancelled for each runner"
+
+-- Fix the blank spaces and 'null' strings so that they are real NULLs
+WITH fixed_nulls AS (
+  SELECT
+    runner_id,
+    CASE WHEN cancellation IN ('', 'null') THEN NULL ELSE cancellation END AS cancellation
+  FROM pizza_runner.runner_orders
+)
+SELECT
+  runner_id,
+-- NULL means it was delivered. Anything else is an order that was cancelled.
+  ROUND(100 * SUM(CASE WHEN cancellation IS NULL THEN 1 ELSE 0 END) / COUNT(*)::NUMERIC) AS success_percentage
+FROM fixed_nulls
+GROUP BY runner_id
+ORDER BY runner_id;
+```
+| runner_id | success_percentage |
+|-----------|--------------------|
+| 1         | 100                |
+| 2         | 75                 |
+| 3         | 50                 |
