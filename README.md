@@ -8,6 +8,7 @@ This is Case Study #2 from the 8-Week SQL Challenge of [Danny Ma's Serious SQL c
 3. [SQL Query Solutions](#sql-query-solutions)
     1. [Pizza Metrics](#pizza-metrics)
     2. [Runner and Customer Experience](#runner-and-customer-experience)
+    3. [Ingredient Optimisation](#ingredient-optimisation)
 
 ## [Background](#table-of-contents)
 ### Problem Statement
@@ -699,3 +700,28 @@ ORDER BY runner_id;
 | 1         | 100                |
 | 2         | 75                 |
 | 3         | 50                 |
+
+### [Ingredient Optimisation](#table-of-contents)
+> 1. What are the standard ingredients for each pizza?
+```sql
+-- Separate id's into their own column
+WITH cte_1 AS (
+  SELECT
+    pizza_id,
+    UNNEST(REGEXP_MATCHES(toppings, '[0-9]{1,2}','g')) AS ingredients
+  FROM pizza_runner.pizza_recipes
+)
+-- Concat ingredient names together
+SELECT pizza_name,
+  STRING_AGG(topping_name::TEXT, ', ') AS standard_ingredients
+FROM cte_1
+INNER JOIN pizza_runner.pizza_toppings
+  ON cte_1.ingredients::INTEGER = pizza_toppings.topping_id -- CAST in order to join integers
+INNER JOIN pizza_runner.pizza_names
+  ON cte_1.pizza_id = pizza_names.pizza_id
+GROUP BY pizza_name;
+```
+| pizza_name | standard_ingredients                                                  |
+|------------|-----------------------------------------------------------------------|
+| Meatlovers | Bacon, BBQ Sauce, Beef, Cheese, Chicken, Mushrooms, Pepperoni, Salami |
+| Vegetarian | Cheese, Mushrooms, Onions, Peppers, Tomatoes, Tomato Sauce            |
