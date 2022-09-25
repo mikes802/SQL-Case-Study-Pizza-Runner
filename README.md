@@ -725,3 +725,57 @@ GROUP BY pizza_name;
 |------------|-----------------------------------------------------------------------|
 | Meatlovers | Bacon, BBQ Sauce, Beef, Cheese, Chicken, Mushrooms, Pepperoni, Salami |
 | Vegetarian | Cheese, Mushrooms, Onions, Peppers, Tomatoes, Tomato Sauce            |
+
+> 2. What was the most commonly added extra?
+```sql
+-- Separate id's into their own column
+WITH extra_CTE AS (
+  SELECT
+    UNNEST(REGEXP_MATCHES(extras, '[0-9]{1,2}','g')) AS extra_ingredient
+  FROM pizza_runner.customer_orders
+)
+SELECT
+  topping_name,
+  COUNT(*) AS ingredient_count
+FROM extra_CTE
+INNER JOIN pizza_runner.pizza_toppings -- Join to get topping name
+  ON extra_CTE.extra_ingredient::INTEGER = pizza_toppings.topping_id
+GROUP BY topping_name
+ORDER BY ingredient_count DESC
+LIMIT 1;
+```
+| topping_name | ingredient_count |
+|--------------|------------------|
+| Bacon        | 4                |
+
+> 3. What was the most common exclusion?
+```sql
+-- Similar to the last exercise, just switch to the `exclusions` column
+-- Separate id's into their own column
+WITH excluded_CTE AS (
+  SELECT
+    UNNEST(REGEXP_MATCHES(exclusions, '[0-9]{1,2}','g')) AS excluded_ingredient
+  FROM pizza_runner.customer_orders
+)
+SELECT
+  topping_name,
+  COUNT(*) AS ingredient_count
+FROM excluded_CTE
+INNER JOIN pizza_runner.pizza_toppings -- Join to get topping name
+  ON excluded_CTE.excluded_ingredient::INTEGER = pizza_toppings.topping_id
+GROUP BY topping_name
+ORDER BY ingredient_count DESC
+LIMIT 1;
+```
+| topping_name | ingredient_count |
+|--------------|------------------|
+| Cheese       | 4                |
+
+Who are these people??!!
+
+> 4. Generate an order item for each record in the customers_orders table in the format of one of the following:
+> - Meat Lovers
+> - Meat Lovers - Exclude Beef
+> - Meat Lovers - Extra Bacon
+> - Meat Lovers - Exclude Cheese, Bacon - Extra Mushroom, Peppers
+
