@@ -778,4 +778,116 @@ Who are these people??!!
 > - Meat Lovers - Exclude Beef
 > - Meat Lovers - Extra Bacon
 > - Meat Lovers - Exclude Cheese, Bacon - Extra Mushroom, Peppers
-
+```sql
+-- Fix the blank spaces and 'null' strings so that they are real NULLs
+WITH fixed_nulls AS (
+  SELECT
+    order_id,
+    customer_id,
+    pizza_id,
+    CASE WHEN exclusions IN ('', 'null') THEN NULL ELSE exclusions END AS exclusions,
+    CASE WHEN extras IN ('', 'null') THEN NULL ELSE extras END AS extras,
+    order_time,
+-- This ROW_NUMBER is essential in the GROUP BY two CTE's below for concatenating the topping names 
+    ROW_NUMBER() OVER () AS original_row_number
+  FROM pizza_runner.customer_orders
+),
+-- REGEXP_MATCHES will not return rows that don't have any matches. So we need to UNION them back in.
+cte_extras_exclusions AS (
+  SELECT
+    order_id,
+    customer_id,
+    pizza_id,
+    UNNEST(REGEXP_MATCHES(exclusions, '[0-9]{1,2}','g')) AS excluded_ingredient,
+    UNNEST(REGEXP_MATCHES(extras, '[0-9]{1,2}','g')) AS extra_ingredient,
+    order_time,
+    original_row_number
+  FROM fixed_nulls
+UNION 
+  SELECT
+    order_id,
+    customer_id,
+    pizza_id,
+    NULL AS excluded_ingredient,
+    NULL AS extra_ingredient,
+    order_time,
+    original_row_number
+  FROM fixed_nulls
+  WHERE exclusions IS NULL AND extras IS NULL
+),
+-- Concatenate the strings using the `original_row_number` in the GROUP BY.
+cte_complete_dataset AS (
+  SELECT
+    base.order_id,
+    base.customer_id,
+    base.pizza_id,
+    names.pizza_name,
+    base.order_time,
+    base.original_row_number,
+    STRING_AGG(exclusions.topping_name, ', ') AS exclusions,
+    STRING_AGG(extras.topping_name, ', ') AS extras
+  FROM cte_extras_exclusions AS base
+  INNER JOIN pizza_runner.pizza_names AS names 
+    ON base.pizza_id = names.pizza_id
+  LEFT JOIN pizza_runner.pizza_toppings AS exclusions
+    ON base.excluded_ingredient::INTEGER = exclusions.topping_id
+  LEFT JOIN pizza_runner.pizza_toppings AS extras
+    ON base.extra_ingredient::INTEGER = extras.topping_id
+  GROUP BY
+    base.order_id,
+    base.customer_id,
+    base.pizza_id,
+    names.pizza_name,
+    base.order_time,
+    base.original_row_number
+),
+-- Create the strings for "Exclude" and "Extra".
+cte_strings AS (
+  SELECT
+    order_id,
+    customer_id,
+    pizza_id,
+    order_time,
+    original_row_number,
+    pizza_name,
+    CASE WHEN exclusions IS NULL THEN '' ELSE ' - Exclude ' || exclusions END AS exclusions,
+    CASE WHEN extras IS NULL THEN '' ELSE ' - Extra ' || extras END AS extras
+  FROM cte_complete_dataset
+),
+-- Create final string output.
+final_output AS (
+  SELECT
+    order_id,
+    customer_id,
+    pizza_id,
+    order_time,
+    original_row_number,
+    pizza_name || exclusions || extras AS order_item
+  FROM cte_strings
+)
+-- ORDER BY original_row_number.
+SELECT
+  order_id,
+  customer_id,
+  pizza_id,
+  order_time,
+  order_item
+FROM final_output
+ORDER BY original_row_number;
+```
+| order_id | customer_id | pizza_id | order_time               | order_item                                                      |
+|----------|-------------|----------|--------------------------|-----------------------------------------------------------------|
+| 1        | 101         | 1        | 2021-01-01T18:05:02.000Z | Meatlovers                                                      |
+| 2        | 101         | 1        | 2021-01-01T19:00:52.000Z | Meatlovers                                                      |
+| 3        | 102         | 1        | 2021-01-02T23:51:23.000Z | Meatlovers                                                      |
+| 3        | 102         | 2        | 2021-01-02T23:51:23.000Z | Vegetarian                                                      |
+| 4        | 103         | 1        | 2021-01-04T13:23:46.000Z | Meatlovers - Exclude Cheese                                     |
+| 4        | 103         | 1        | 2021-01-04T13:23:46.000Z | Meatlovers - Exclude Cheese                                     |
+| 4        | 103         | 2        | 2021-01-04T13:23:46.000Z | Vegetarian - Exclude Cheese                                     |
+| 5        | 104         | 1        | 2021-01-08T21:00:29.000Z | Meatlovers - Extra Bacon                                        |
+| 6        | 101         | 2        | 2021-01-08T21:03:13.000Z | Vegetarian                                                      |
+| 7        | 105         | 2        | 2021-01-08T21:20:29.000Z | Vegetarian - Extra Bacon                                        |
+| 8        | 102         | 1        | 2021-01-09T23:54:33.000Z | Meatlovers                                                      |
+| 9        | 103         | 1        | 2021-01-10T11:22:59.000Z | Meatlovers - Exclude Cheese - Extra Bacon, Chicken              |
+| 10       | 104         | 1        | 2021-01-11T18:34:49.000Z | Meatlovers                                                      |
+| 10       | 104         | 1        | 2021-01-11T18:34:49.000Z | Meatlovers - Exclude Mushrooms, BBQ Sauce - Extra Cheese, Bacon |
