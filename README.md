@@ -891,3 +891,140 @@ ORDER BY original_row_number;
 | 9        | 103         | 1        | 2021-01-10T11:22:59.000Z | Meatlovers - Exclude Cheese - Extra Bacon, Chicken              |
 | 10       | 104         | 1        | 2021-01-11T18:34:49.000Z | Meatlovers                                                      |
 | 10       | 104         | 1        | 2021-01-11T18:34:49.000Z | Meatlovers - Exclude Mushrooms, BBQ Sauce - Extra Cheese, Bacon |
+
+> 5. Generate an alphabetically ordered comma separated ingredient list for each pizza order from the customer_orders table and add a 2x in front of any relevant ingredients.
+> - For example: "Meat Lovers: 2xBacon, Beef, ... , Salami"
+```sql
+-- Fix the blank spaces and 'null' strings so that they are real NULLs
+WITH fixed_nulls AS (
+  SELECT
+    order_id,
+    customer_id,
+    pizza_id,
+    CASE WHEN exclusions IN ('', 'null') THEN NULL ELSE exclusions END AS exclusions,
+    CASE WHEN extras IN ('', 'null') THEN NULL ELSE extras END AS extras,
+    order_time,
+    ROW_NUMBER() OVER () AS original_row_number
+-- This ROW_NUMBER is essential for grouping ingredients back together in their original rows 
+  FROM pizza_runner.customer_orders
+),
+-- Separate id's into their own column for regular toppings
+cte_regular_toppings AS (
+  SELECT
+    pizza_id,
+    UNNEST(REGEXP_MATCHES(toppings, '[0-9]{1,2}','g'))::INTEGER AS topping_id
+  FROM pizza_runner.pizza_recipes
+),
+-- Join the fixed_nulls table above with regular toppings
+cte_base_toppings AS (
+  SELECT
+    fixed_nulls.order_id,
+    fixed_nulls.customer_id,
+    fixed_nulls.pizza_id,
+    fixed_nulls.order_time,
+    fixed_nulls.original_row_number,
+    cte_regular_toppings.topping_id
+  FROM fixed_nulls
+  LEFT JOIN cte_regular_toppings
+    ON fixed_nulls.pizza_id = cte_regular_toppings.pizza_id
+),
+-- Separate id's into their own column for any exclusions
+cte_exclusions AS (
+  SELECT
+    order_id,
+    customer_id,
+    pizza_id,
+    order_time,
+    original_row_number,
+    UNNEST(REGEXP_MATCHES(exclusions, '[0-9]{1,2}','g'))::INTEGER AS topping_id
+  FROM fixed_nulls
+  WHERE exclusions IS NOT NULL
+),
+-- Separate id's into their own column for any extras
+cte_extras AS (
+  SELECT
+    order_id,
+    customer_id,
+    pizza_id,
+    order_time,
+    original_row_number,
+    UNNEST(REGEXP_MATCHES(extras, '[0-9]{1,2}','g'))::INTEGER AS topping_id
+  FROM fixed_nulls
+  WHERE extras IS NOT NULL
+),
+-- Combine all of the above with `UNION ALL` to keep repeat toppings that are extras, 
+-- but use `EXCEPT` to eliminate repeat toppings that are exclusions
+cte_combined_orders AS (
+  SELECT * FROM cte_base_toppings
+  EXCEPT
+  SELECT * FROM cte_exclusions
+  UNION ALL 
+  SELECT * FROM cte_extras
+),
+-- This joins in the pizza and topping names, and also counts those repeat ingredients,
+-- which will be used below to help create the desired string output.
+cte_joined_toppings AS (
+  SELECT  
+    t1.order_id,
+    t1.customer_id,
+    t1.pizza_id,
+    t1.order_time,
+    t1.original_row_number,
+    t1.topping_id,
+    t2.pizza_name,
+    t3.topping_name,
+    COUNT(t1.*) AS topping_count
+  FROM cte_combined_orders AS t1 
+  INNER JOIN pizza_runner.pizza_names AS t2 
+    ON t1.pizza_id = t2.pizza_id
+  INNER JOIN pizza_runner.pizza_toppings AS t3 
+    ON t1.topping_id = t3.topping_id
+  GROUP BY
+    t1.order_id,
+    t1.customer_id,
+    t1.pizza_id,
+    t1.order_time,
+    t1.original_row_number,
+    t1.topping_id,
+    t2.pizza_name,
+    t3.topping_name
+)
+-- Create the desired string output with a CASE WHEN when there are extras
+SELECT
+  order_id,
+  customer_id,
+  pizza_id,
+  order_time,
+  original_row_number,
+  pizza_name || ': ' || STRING_AGG(
+    CASE
+      WHEN topping_count > 1 THEN topping_count || 'x ' || topping_name
+      ELSE topping_name
+    END,
+  ', '
+  ) AS ingredients_list
+FROM cte_joined_toppings
+GROUP BY
+  order_id,
+  customer_id,
+  pizza_id,
+  order_time,
+  original_row_number,
+  pizza_name;
+  ```
+  | order_id | customer_id | pizza_id | order_time               | original_row_number | ingredients_list                                                                     |
+|----------|-------------|----------|--------------------------|---------------------|--------------------------------------------------------------------------------------|
+| 1        | 101         | 1        | 2021-01-01T18:05:02.000Z | 1                   | Meatlovers: Bacon, BBQ Sauce, Beef, Cheese, Chicken, Mushrooms, Pepperoni, Salami    |
+| 2        | 101         | 1        | 2021-01-01T19:00:52.000Z | 2                   | Meatlovers: Bacon, BBQ Sauce, Beef, Cheese, Chicken, Mushrooms, Pepperoni, Salami    |
+| 3        | 102         | 1        | 2021-01-02T23:51:23.000Z | 3                   | Meatlovers: Bacon, BBQ Sauce, Beef, Cheese, Chicken, Mushrooms, Pepperoni, Salami    |
+| 3        | 102         | 2        | 2021-01-02T23:51:23.000Z | 4                   | Vegetarian: Cheese, Mushrooms, Onions, Peppers, Tomatoes, Tomato Sauce               |
+| 4        | 103         | 1        | 2021-01-04T13:23:46.000Z | 5                   | Meatlovers: Bacon, BBQ Sauce, Beef, Chicken, Mushrooms, Pepperoni, Salami            |
+| 4        | 103         | 1        | 2021-01-04T13:23:46.000Z | 6                   | Meatlovers: Bacon, BBQ Sauce, Beef, Chicken, Mushrooms, Pepperoni, Salami            |
+| 4        | 103         | 2        | 2021-01-04T13:23:46.000Z | 7                   | Vegetarian: Mushrooms, Onions, Peppers, Tomatoes, Tomato Sauce                       |
+| 5        | 104         | 1        | 2021-01-08T21:00:29.000Z | 8                   | Meatlovers: 2x Bacon, BBQ Sauce, Beef, Cheese, Chicken, Mushrooms, Pepperoni, Salami |
+| 6        | 101         | 2        | 2021-01-08T21:03:13.000Z | 9                   | Vegetarian: Cheese, Mushrooms, Onions, Peppers, Tomatoes, Tomato Sauce               |
+| 7        | 105         | 2        | 2021-01-08T21:20:29.000Z | 10                  | Vegetarian: Bacon, Cheese, Mushrooms, Onions, Peppers, Tomatoes, Tomato Sauce        |
+| 8        | 102         | 1        | 2021-01-09T23:54:33.000Z | 11                  | Meatlovers: Bacon, BBQ Sauce, Beef, Cheese, Chicken, Mushrooms, Pepperoni, Salami    |
+| 9        | 103         | 1        | 2021-01-10T11:22:59.000Z | 12                  | Meatlovers: 2x Bacon, BBQ Sauce, Beef, 2x Chicken, Mushrooms, Pepperoni, Salami      |
+| 10       | 104         | 1        | 2021-01-11T18:34:49.000Z | 13                  | Meatlovers: Bacon, BBQ Sauce, Beef, Cheese, Chicken, Mushrooms, Pepperoni, Salami    |
+| 10       | 104         | 1        | 2021-01-11T18:34:49.000Z | 14                  | Meatlovers: 2x Bacon, Beef, 2x Cheese, Chicken, Pepperoni, Salami                    |
