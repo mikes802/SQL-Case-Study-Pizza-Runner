@@ -1028,3 +1028,99 @@ GROUP BY
 | 9        | 103         | 1        | 2021-01-10T11:22:59.000Z | 12                  | Meatlovers: 2x Bacon, BBQ Sauce, Beef, 2x Chicken, Mushrooms, Pepperoni, Salami      |
 | 10       | 104         | 1        | 2021-01-11T18:34:49.000Z | 13                  | Meatlovers: Bacon, BBQ Sauce, Beef, Cheese, Chicken, Mushrooms, Pepperoni, Salami    |
 | 10       | 104         | 1        | 2021-01-11T18:34:49.000Z | 14                  | Meatlovers: 2x Bacon, Beef, 2x Cheese, Chicken, Pepperoni, Salami                    |
+
+> 6. What is the total quantity of each ingredient used in all delivered pizzas sorted by most frequent first?
+```sql
+-- Fix the blank spaces and 'null' strings so that they are real NULLs
+WITH fixed_nulls AS (
+  SELECT
+    order_id,
+    customer_id,
+    pizza_id,
+    CASE WHEN exclusions IN ('', 'null') THEN NULL ELSE exclusions END AS exclusions,
+    CASE WHEN extras IN ('', 'null') THEN NULL ELSE extras END AS extras,
+    order_time
+  FROM pizza_runner.customer_orders
+  WHERE EXISTS ( -- Need only successful deliveries
+    SELECT 1
+    FROM pizza_runner.runner_orders
+    WHERE customer_orders.order_id = runner_orders.order_id
+      AND (cancellation NOT IN ('Restaurant Cancellation', 'Customer Cancellation')
+       OR cancellation IS NULL) -- Need to include or will not return these rows
+    )
+),
+-- Separate id's into their own column for regular toppings
+cte_regular_toppings AS (
+  SELECT
+    pizza_id,
+    UNNEST(REGEXP_MATCHES(toppings, '[0-9]{1,2}','g'))::INTEGER AS topping_id
+  FROM pizza_runner.pizza_recipes
+),
+-- Join the fixed_nulls table above with regular toppings
+cte_base_toppings AS (
+  SELECT
+    fixed_nulls.order_id,
+    fixed_nulls.customer_id,
+    fixed_nulls.pizza_id,
+    fixed_nulls.order_time,
+    cte_regular_toppings.topping_id
+  FROM fixed_nulls
+  LEFT JOIN cte_regular_toppings
+    ON fixed_nulls.pizza_id = cte_regular_toppings.pizza_id
+),
+-- Separate id's into their own column for any exclusions
+cte_exclusions AS (
+  SELECT
+    order_id,
+    customer_id,
+    pizza_id,
+    order_time,
+    UNNEST(REGEXP_MATCHES(exclusions, '[0-9]{1,2}','g'))::INTEGER AS topping_id
+  FROM fixed_nulls
+  WHERE exclusions IS NOT NULL
+),
+-- Separate id's into their own column for any extras
+cte_extras AS (
+  SELECT
+    order_id,
+    customer_id,
+    pizza_id,
+    order_time,
+    UNNEST(REGEXP_MATCHES(extras, '[0-9]{1,2}','g'))::INTEGER AS topping_id
+  FROM fixed_nulls
+  WHERE extras IS NOT NULL
+),
+-- Combine all of the above with `UNION ALL` to keep repeat toppings that are extras, 
+-- but use `EXCEPT` to eliminate repeat toppings that are exclusions
+cte_combined_orders AS (
+  SELECT * FROM cte_base_toppings
+  EXCEPT
+  SELECT * FROM cte_exclusions
+  UNION ALL 
+  SELECT * FROM cte_extras
+)
+-- This joins in the topping names and also counts the toppings
+SELECT  
+  t2.topping_name,
+  COUNT(t2.topping_name) AS topping_count
+FROM cte_combined_orders t1 
+INNER JOIN pizza_runner.pizza_toppings t2 
+  ON t1.topping_id = t2.topping_id
+GROUP BY
+  t2.topping_name
+ORDER BY topping_count DESC
+```
+| topping_name | topping_count |
+|--------------|---------------|
+| Bacon        | 10            |
+| Cheese       | 9             |
+| Mushrooms    | 9             |
+| Pepperoni    | 7             |
+| Chicken      | 7             |
+| Salami       | 7             |
+| Beef         | 7             |
+| BBQ Sauce    | 6             |
+| Tomato Sauce | 3             |
+| Onions       | 3             |
+| Tomatoes     | 3             |
+| Peppers      | 3             |
