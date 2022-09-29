@@ -9,6 +9,7 @@ This is Case Study #2 from the 8-Week SQL Challenge of [Danny Ma's Serious SQL c
     1. [Pizza Metrics](#pizza-metrics)
     2. [Runner and Customer Experience](#runner-and-customer-experience)
     3. [Ingredient Optimisation](#ingredient-optimisation)
+    4. [Pricing and Ratings](#pricing-and-ratings)
 
 ## [Background](#table-of-contents)
 ### Problem Statement
@@ -1124,3 +1125,52 @@ ORDER BY topping_count DESC
 | Onions       | 3             |
 | Tomatoes     | 3             |
 | Peppers      | 3             |
+### [Pricing and Ratings](#table-of-contents)
+> 1. If a Meat Lovers pizza costs $12 and Vegetarian costs $10 and there were no charges for changes - how much money has Pizza Runner made so far if there are no delivery fees?
+```sql
+SELECT
+  SUM(
+    CASE WHEN pizza_id = 1 THEN 12 ELSE 10 END
+  ) AS total_banked_dollars,
+
+FROM pizza_runner.customer_orders
+WHERE EXISTS ( -- Need only successful deliveries
+    SELECT 1
+    FROM pizza_runner.runner_orders
+    WHERE customer_orders.order_id = runner_orders.order_id
+      AND (cancellation NOT IN ('Restaurant Cancellation', 'Customer Cancellation')
+      OR cancellation IS NULL) -- Need to include or will not return these rows)
+    );
+```
+| total_banked_dollars |
+|----------------------|
+| 138                  |
+
+> 2. What if there was an additional $1 charge for any pizza extras?
+```sql
+WITH fixed_nulls AS (
+  SELECT
+    order_id,
+    CASE WHEN pizza_id = 1 THEN 12 ELSE 10 END AS pizza_price,
+    CASE WHEN extras IN ('', 'null') THEN NULL ELSE extras END AS extras
+  FROM pizza_runner.customer_orders
+)
+SELECT
+  SUM(pizza_price) + 
+-- This will count the number of extras by counting the number of elements
+-- in an array. One extra = $1, so this is the total $ for extras.
+    SUM(
+      CARDINALITY(REGEXP_SPLIT_TO_ARRAY(extras, '[,\s]+'))
+    ) AS total_banked_dollars
+FROM fixed_nulls
+WHERE EXISTS ( -- Need only successful deliveries
+    SELECT 1
+    FROM pizza_runner.runner_orders
+    WHERE fixed_nulls.order_id = runner_orders.order_id
+      AND (cancellation NOT IN ('Restaurant Cancellation', 'Customer Cancellation')
+      OR cancellation IS NULL) -- Need to include or will not return these rows)
+    );
+```
+| total_banked_dollars |
+|----------------------|
+| 142                  |
