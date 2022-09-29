@@ -526,6 +526,8 @@ ORDER BY week_of;
 | 2021-01-15T00:00:00.000Z | 1                  |
 
 > 2. What was the average time in minutes it took for each runner to arrive at the Pizza Runner HQ to pickup the order?
+
+This is how I understood the question: What was the average pick-up time per runner?
 ```sql
 -- Will need to join `order_time` from `customer_orders` table to `runner_orders` table
 -- `pickup_time` in `runner_orders` table is not a TIMESTAMP, unlike `order_time`
@@ -533,13 +535,13 @@ ORDER BY week_of;
 SELECT
   runner_id,
   AVG(
-    (EXTRACT(EPOCH FROM pickup_time::TIMESTAMP)
+    (EXTRACT(EPOCH FROM pickup_time::TIMESTAMP) -- Cast pickup_time as TIMESTAMP
       - EXTRACT(EPOCH FROM order_time)) / (60)
     ) AS avg_time_to_pickup_min
 FROM pizza_runner.runner_orders
 INNER JOIN pizza_runner.customer_orders
   ON runner_orders.order_id = customer_orders.order_id
-WHERE pickup_time <> 'null'
+WHERE pickup_time <> 'null' -- Filter out orders that were cancelled
 GROUP BY runner_id
 ORDER BY runner_id;
 ```
@@ -548,6 +550,32 @@ ORDER BY runner_id;
 | 1         | 15.67778               |
 | 2         | 23.72                  |
 | 3         | 10.46667               |
+
+After seeing the expected output table, I understand now that the question is: What is the average pick-up time for the orders?
+```sql
+WITH cte_1 AS (
+  SELECT
+    runner_orders.order_id,
+-- In his query, Danny truncates the minutes after using the AGE function.
+-- I need to use FLOOR to get the same result using my method.
+    FLOOR(
+      (EXTRACT(EPOCH FROM pickup_time::TIMESTAMP) -- Cast pickup_time as TIMESTAMP
+        - EXTRACT(EPOCH FROM order_time)
+      ) / (60)
+    ) AS order_pickup
+  FROM pizza_runner.runner_orders
+  INNER JOIN pizza_runner.customer_orders
+    ON runner_orders.order_id = customer_orders.order_id
+  WHERE pickup_time <> 'null' -- Filter out orders that were cancelled
+  GROUP BY runner_orders.order_id, order_pickup -- Group to eliminate duplicate rows after join
+)
+SELECT
+  AVG(order_pickup) avg_pickup_time_minutes
+FROM cte_1
+```
+| avg_pickup_time_minutes |
+|-------------------------|
+| 15.625                  |
 
 > 3. Is there any relationship between the number of pizzas and how long the order takes to prepare?
 ```sql
@@ -1168,7 +1196,7 @@ WHERE EXISTS ( -- Need only successful deliveries
     FROM pizza_runner.runner_orders
     WHERE fixed_nulls.order_id = runner_orders.order_id
       AND (cancellation NOT IN ('Restaurant Cancellation', 'Customer Cancellation')
-      OR cancellation IS NULL) -- Need to include or will not return these rows)
+      OR cancellation IS NULL) -- Need to include or will not return these rows
     );
 ```
 | total_banked_dollars |
