@@ -1202,3 +1202,120 @@ WHERE EXISTS ( -- Need only successful deliveries
 | total_banked_dollars |
 |----------------------|
 | 142                  |
+
+> 3. The Pizza Runner team now wants to add an additional ratings system that allows customers to rate their runner, how would you design an additional table for this new dataset - generate a schema for this new table and insert your own data for ratings for each successful customer order between 1 to 5.
+```sql
+DROP TABLE IF EXISTS order_rating;
+CREATE TABLE order_rating (
+  order_id INT NOT NULL,
+  rating INT NULL 
+);
+INSERT INTO order_rating (order_id, rating)
+VALUES
+  (1, 2),
+  (2, 3),
+  (3, 2),
+  (4, 2),
+  (5, 3),
+  (6, NULL),
+  (7, 4),
+  (8, 4),
+  (9, NULL),
+  (10, 5)
+RETURNING *;
+```
+| order_id | rating |
+|----------|--------|
+| 1        | 2      |
+| 2        | 3      |
+| 3        | 2      |
+| 4        | 2      |
+| 5        | 3      |
+| 6        |        |
+| 7        | 4      |
+| 8        | 4      |
+| 9        |        |
+| 10       | 5      |
+
+> 4. Using your newly generated table - can you join all of the information together to form a table which has the following information for successful deliveries?
+>- customer_id
+>- order_id
+>- runner_id
+>- rating
+>- order_time
+>- pickup_time
+>- Time between order and pickup
+>- Delivery duration
+>- Average speed
+>- Total number of pizzas
+```sql
+-- Use the queries already created to accomplish this.
+-- First, clean the runner_orders table to calculate speed.
+WITH dist_duration_fix AS (
+  SELECT
+    order_id,
+    runner_id,
+    UNNEST(REGEXP_MATCH(distance, '[0-9]*\.*[0-9]*')) AS flat_distance,
+    UNNEST(REGEXP_MATCH(duration, '[0-9]*')) AS flat_duration
+  FROM pizza_runner.runner_orders
+  WHERE distance <> 'null' AND duration <> 'null'
+),
+-- Calculate speed
+duration_speed_cte AS (
+  SELECT *,
+    ROUND(
+      60 * (flat_distance::NUMERIC / flat_duration::NUMERIC),
+    2) AS speed_km_hr
+  FROM dist_duration_fix
+),
+-- Calculate prep time. This CTE also contains much of the other
+-- fields required for final output.
+times_pizza_count AS (
+  SELECT 
+    runner_orders.order_id, 
+    subquery.customer_id,
+    subquery.pizza_count,
+    order_time,
+    pickup_time::TIMESTAMP,
+    FLOOR(
+      (EXTRACT(EPOCH FROM pickup_time::TIMESTAMP)
+        - EXTRACT(EPOCH FROM order_time)) / (60) 
+    ) AS order_prep_time
+  FROM 
+-- This subquery brings in the order_time for each order that was not cancelled.
+   (SELECT
+      order_id, customer_id, order_time, COUNT(*) AS pizza_count
+      FROM pizza_runner.customer_orders
+      GROUP BY order_id, customer_id, order_time
+   ) subquery
+  INNER JOIN pizza_runner.runner_orders
+    ON runner_orders.order_id = subquery.order_id
+  WHERE runner_orders.pickup_time <> 'null'
+)
+SELECT
+  times_pizza_count.customer_id,
+  times_pizza_count.order_id,
+  duration_speed_cte.runner_id,
+  order_rating.rating,
+  times_pizza_count.order_time,
+  times_pizza_count.pickup_time,
+  times_pizza_count.order_prep_time,
+  duration_speed_cte.flat_duration AS delivery_duration_min,
+  duration_speed_cte.speed_km_hr,
+  times_pizza_count.pizza_count
+FROM times_pizza_count
+INNER JOIN duration_speed_cte
+  ON times_pizza_count.order_id = duration_speed_cte.order_id
+INNER JOIN order_rating -- Join with new table to capture order ratings.
+  ON times_pizza_count.order_id = order_rating.order_id;
+```
+| customer_id | order_id | runner_id | rating | order_time               | pickup_time              | order_prep_time | delivery_duration_min | speed_km_hr | pizza_count |
+|-------------|----------|-----------|--------|--------------------------|--------------------------|-----------------|-----------------------|-------------|-------------|
+| 101         | 1        | 1         | 2      | 2021-01-01T18:05:02.000Z | 2021-01-01T18:15:34.000Z | 10              | 32                    | 37.50       | 1           |
+| 101         | 2        | 1         | 3      | 2021-01-01T19:00:52.000Z | 2021-01-01T19:10:54.000Z | 10              | 27                    | 44.44       | 1           |
+| 102         | 3        | 1         | 2      | 2021-01-02T23:51:23.000Z | 2021-01-03T00:12:37.000Z | 21              | 20                    | 40.20       | 2           |
+| 103         | 4        | 2         | 2      | 2021-01-04T13:23:46.000Z | 2021-01-04T13:53:03.000Z | 29              | 40                    | 35.10       | 3           |
+| 104         | 5        | 3         | 3      | 2021-01-08T21:00:29.000Z | 2021-01-08T21:10:57.000Z | 10              | 15                    | 40.00       | 1           |
+| 105         | 7        | 2         | 4      | 2021-01-08T21:20:29.000Z | 2021-01-08T21:30:45.000Z | 10              | 25                    | 60.00       | 1           |
+| 102         | 8        | 2         | 4      | 2021-01-09T23:54:33.000Z | 2021-01-10T00:15:02.000Z | 20              | 15                    | 93.60       | 1           |
+| 104         | 10       | 1         | 5      | 2021-01-11T18:34:49.000Z | 2021-01-11T18:50:20.000Z | 15              | 10                    | 60.00       | 2           |
