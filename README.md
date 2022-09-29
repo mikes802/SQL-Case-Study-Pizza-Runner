@@ -1159,8 +1159,7 @@ ORDER BY topping_count DESC
 SELECT
   SUM(
     CASE WHEN pizza_id = 1 THEN 12 ELSE 10 END
-  ) AS total_banked_dollars,
-
+  ) AS total_banked_dollars
 FROM pizza_runner.customer_orders
 WHERE EXISTS ( -- Need only successful deliveries
     SELECT 1
@@ -1319,3 +1318,42 @@ INNER JOIN order_rating -- Join with new table to capture order ratings.
 | 105         | 7        | 2         | 4      | 2021-01-08T21:20:29.000Z | 2021-01-08T21:30:45.000Z | 10              | 25                    | 60.00       | 1           |
 | 102         | 8        | 2         | 4      | 2021-01-09T23:54:33.000Z | 2021-01-10T00:15:02.000Z | 20              | 15                    | 93.60       | 1           |
 | 104         | 10       | 1         | 5      | 2021-01-11T18:34:49.000Z | 2021-01-11T18:50:20.000Z | 15              | 10                    | 60.00       | 2           |
+
+>5. If a Meat Lovers pizza was $12 and Vegetarian $10 fixed prices with no cost for extras and each runner is paid $0.30 per kilometre traveled - how much money does Pizza Runner have left over after these deliveries?
+```sql
+-- Calculate gross earned using previous query
+WITH gross_CTE AS (
+  SELECT
+    SUM(
+      CASE WHEN pizza_id = 1 THEN 12 ELSE 10 END
+    ) AS total_banked_dollars
+  FROM pizza_runner.customer_orders
+  WHERE EXISTS ( -- Need only successful deliveries
+      SELECT 1
+      FROM pizza_runner.runner_orders
+      WHERE customer_orders.order_id = runner_orders.order_id
+        AND (cancellation NOT IN ('Restaurant Cancellation', 'Customer Cancellation')
+        OR cancellation IS NULL) -- Need to include or will not return these rows)
+      )
+),
+-- Fix distance field for calculation
+distance_fix AS (
+  SELECT
+    UNNEST(REGEXP_MATCH(distance, '[0-9]*\.*[0-9]*')) AS flat_distance
+  FROM pizza_runner.runner_orders
+  WHERE distance <> 'null' AND duration <> 'null'
+)
+SELECT
+  total_banked_dollars AS _gross,
+  ROUND(0.30 * SUM(flat_distance::NUMERIC),2) AS _expense,
+  ROUND(
+    total_banked_dollars - 
+      (0.30 * SUM(flat_distance::NUMERIC)),2
+  ) AS _net
+FROM gross_CTE
+CROSS JOIN distance_fix
+GROUP BY total_banked_dollars;
+```
+| _gross | _expense | _net  |
+|--------|----------|-------|
+| 138    | 43.56    | 94.44 |
