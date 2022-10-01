@@ -1306,38 +1306,27 @@ GROUP BY
 
 >5. If a Meat Lovers pizza was $12 and Vegetarian $10 fixed prices with no cost for extras and each runner is paid $0.30 per kilometre traveled - how much money does Pizza Runner have left over after these deliveries?
 ```sql
--- Calculate gross earned using previous query
-WITH gross_CTE AS (
+-- Calculate gross earned per order and join with distance
+WITH calculated_cte AS (
   SELECT
+    runner_orders.order_id,
     SUM(
       CASE WHEN pizza_id = 1 THEN 12 ELSE 10 END
-    ) AS total_banked_dollars
-  FROM pizza_runner.customer_orders
-  WHERE EXISTS ( -- Need only successful deliveries
-      SELECT 1
-      FROM pizza_runner.runner_orders
-      WHERE customer_orders.order_id = runner_orders.order_id
-        AND (cancellation NOT IN ('Restaurant Cancellation', 'Customer Cancellation')
-        OR cancellation IS NULL) -- Need to include or will not return these rows)
-      )
-),
--- Fix distance field for calculation
-distance_fix AS (
-  SELECT
+    ) AS order_gross,
     UNNEST(REGEXP_MATCH(distance, '[0-9]*\.*[0-9]*')) AS flat_distance
   FROM pizza_runner.runner_orders
+  INNER JOIN pizza_runner.customer_orders
+    ON runner_orders.order_id = customer_orders.order_id
   WHERE distance <> 'null' AND duration <> 'null'
+  GROUP BY runner_orders.order_id, distance
 )
+-- Perform calculations.
 SELECT
-  total_banked_dollars AS _gross,
+  SUM(order_gross) AS _gross,
   ROUND(0.30 * SUM(flat_distance::NUMERIC),2) AS _expense,
-  ROUND(
-    total_banked_dollars - 
-      (0.30 * SUM(flat_distance::NUMERIC)),2
-  ) AS _net
-FROM gross_CTE
-CROSS JOIN distance_fix
-GROUP BY total_banked_dollars;
+  SUM(order_gross) -
+    ROUND(0.30 * SUM(flat_distance::NUMERIC),2) AS _net
+FROM calculated_cte;
 ```
 | _gross | _expense | _net  |
 |--------|----------|-------|
