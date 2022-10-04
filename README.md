@@ -45,7 +45,7 @@ WHERE
 | pizza_runner | runners    | registration_date | date      |
 
 ```sql
--- Explore the `members` table
+-- Explore the `runners` table
 
 SELECT *
 FROM pizza_runner.runners;
